@@ -1,0 +1,29 @@
+[package]
+name = "recommender"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["random_recommender", "space"]
+random_recommender = [
+  "dep:rand",
+  "uuid/fast-rng",
+  "uuid/v4",
+]
+space = [
+  "spatial"
+]
+
+[dependencies]
+anyhow = "1.0.82"
+arroy = "0.3.0"
+derive_builder = "0.20.0"
+heed = "0.20.0-alpha.9"
+rand = { version = "0.8.5", optional = true }
+serde = "1.0.198"
+spatial = { path = "../spatial", optional = true}
+thiserror = "1.0.58"
+tracing = "0.1.40"
+uuid = { version = "1.8.0", features = ["serde"] }
