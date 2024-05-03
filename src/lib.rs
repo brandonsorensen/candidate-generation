@@ -18,7 +18,7 @@ pub use list::RecommendationList;
 pub use error::RecommendError;
 pub use types::Recommendation;
 
-pub(crate) trait Recommender<K, R> {
+pub trait Recommender<K, R> {
   fn recommend(&self, item_id: &K, n_items: u16)
       -> Result<RecommendationList<R>, RecommendError>;
 }
