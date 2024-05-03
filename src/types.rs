@@ -20,8 +20,8 @@ impl<IntoId, Id> From<(IntoId, f32)> for Recommendation<Id>
 }
 
 #[cfg(feature = "space")]
-impl<T> From<spatial::Distance<T>> for Recommendation<T> {
-  fn from(value: spatial::Distance<T>) -> Self {
+impl<T> From<crate::spatial::Distance<T>> for Recommendation<T> {
+  fn from(value: crate::spatial::Distance<T>) -> Self {
     Recommendation::new(value.item_id, 1f32 - value.distance)
   }
 }

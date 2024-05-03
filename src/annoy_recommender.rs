@@ -1,6 +1,5 @@
 use std::{
   fs::File,
-  io::BufReader,
   path::PathBuf
 };
 
@@ -37,56 +36,63 @@ impl<D> AnnoyRecommender<D> {
     Self { db, env }
   }
 
-  pub fn builder<P, T>() -> AnnoyRecommenderBuilder<P, T>
-    where P: IntoIterator<Item = T> + Clone,
-            T: Into<u32> + Clone {
+  pub fn builder<P>() -> AnnoyRecommenderBuilder<P>
+    where P: VectorProvider + Clone {
     AnnoyRecommenderBuilder::default()
   }
 }
 
 #[derive(Builder)]
 #[builder(name = "AnnoyRecommenderBuilder", public, build_fn(skip))]
-pub struct AnnoyRecommenderArguments<P, T>
-  where P: IntoIterator<Item = T>,
-        T: Into<u32> {
+pub struct AnnoyRecommenderArguments<P>
+  where P: VectorProvider {
   map_size: usize,
   max_dbs: usize,
   path: PathBuf,
   vector_provider: Option<P>
 }
 
-impl<P, T> AnnoyRecommenderBuilder<P, T>
-  where P: IntoIterator<Item = T>,
-        T: Into<u32> {
-  fn build(&self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError>
-    {
+
+pub trait VectorProvider: ExactSizeIterator<Item = (u32, Vec<f32>)> {
+  fn vector_dimensions(&self) -> u16;
+}
+
+impl<P> AnnoyRecommenderBuilder<P>
+  where P: VectorProvider + Clone {
+
+  fn build(self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError> {
     let span  = span!(Level::DEBUG, "annoy-init");
     let _guard = span.enter();
     debug!("Initializing heed environment");
     let env = EnvOpenOptions::new()
       .map_size(self.map_size.unwrap() as usize)
       .max_dbs(self.max_dbs.unwrap() as u32)
-      .open(self.path.unwrap())?;
-    let db = match &self.vector_provider.unwrap() {
-      Some(init_config) => Self::init_db(&env, init_config),
+      .open(self.path.clone().unwrap())
+      .map_err(|e| {
+        AnnoyRecommenderBuilderError::ValidationError(
+          format!("Couldn't open heed environment: {}", e)
+        )
+      })?;
+    // let provider = self.vector_provider.unwrap();
+    let db = match self.vector_provider.clone().unwrap() {
+      Some(mut provider) => self.init_db(&env, &mut provider),
       None => Self::open_existing_db(&env)
-    }?;
-    Ok(Self::new(db, env))
+    }.map_err(|e| {
+      format!("Couldn't open DB connection: {}", e)
+    })?;
+    Ok(AnnoyRecommender::new(db, env))
   }
 
-  fn init_db(&self, env: &Env, config: &DatabaseInitConfig) -> Result<ArroyDatabase<DotProduct>> {
+  fn init_db(&self, env: &Env, provider: &mut P) -> Result<ArroyDatabase<DotProduct>> {
     debug!("Initializing new heed DB");
     let mut wrtx = env.write_txn()?;
     let db = env.create_database(&mut wrtx, Some("listing-db"))?;
-    let listing_file = File::open(&config.listing_vectors)?;
-    // let vec_iter = Unpacker::new(BufReader::new(listing_file), config.vector_dimensions)?;
-    let writer = Writer::<DotProduct>::new(db, 0, config.vector_dimensions);
-    let n_elements = vec_iter.n_elements;
+    let writer = Writer::<DotProduct>::new(db, 0, provider.vector_dimensions() as usize);
+    let n_elements = provider.len();
     debug!("Loading {} vectors", n_elements);
-    for (i, listing) in vec_iter.into_iter().enumerate() {
-      let id: u32 = listing.key.try_into()?;
+    for (i, (id, vector)) in provider.enumerate() {
       trace!("Inserting vector {}/{} with ID \"{}\"", i, n_elements, id);
-      writer.add_item(&mut wrtx, id, &listing.vector)?;
+      writer.add_item(&mut wrtx, id, &vector)?;
     }
     debug!("Committing initialize transaction");
     let mut rng = StdRng::from_entropy();

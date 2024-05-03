@@ -4,6 +4,8 @@ mod list;
 mod mapping;
 #[cfg(feature = "random_recommender")]
 mod random;
+#[cfg(feature = "space")]
+mod spatial;
 mod types;
 
 #[macro_use]
