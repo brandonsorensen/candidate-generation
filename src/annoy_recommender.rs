@@ -192,7 +192,7 @@ impl<D, Key, Rec> Recommender<Key, Rec> for AnnoyRecommender<D>
     let converted_id: u32 = subject_id.clone().try_into()
       .map_err(|_| RecommendError::IncompatibleId)?;
     trace!("Locating subject vector");
-    let subject_vector= reader.item_vector(&rtx, converted_id)?
+    let subject_vector = reader.item_vector(&rtx, converted_id)?
       .ok_or(RecommendError::NotFound)?;
     let recs = RecommendationList::new_with_subject(
       subject_id, reader.nns_by_vector(
