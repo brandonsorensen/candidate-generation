@@ -35,8 +35,9 @@ impl<D> AnnoyRecommender<D> {
     Self { db, env }
   }
 
-  pub fn builder<P>() -> AnnoyRecommenderBuilder<P>
-    where P: VectorProvider + Clone {
+  pub fn builder<P, PathRef>() -> AnnoyRecommenderBuilder<P, PathRef>
+    where P: VectorProvider,
+          PathRef: AsRef<std::path::Path> {
     AnnoyRecommenderBuilder::default()
   }
 }
@@ -46,21 +47,23 @@ pub trait VectorProvider: ExactSizeIterator<Item = (u32, Vec<f32>)> {
 }
 
 #[derive(Builder)]
-#[builder(name = "AnnoyRecommenderBuilder", public, build_fn(skip))]
-pub struct AnnoyRecommenderArguments<P>
-  where P: VectorProvider {
+#[builder(name = "AnnoyRecommenderBuilder", pattern="owned", public, build_fn(skip))]
+#[allow(dead_code)]
+pub struct AnnoyRecommenderArguments<P, PathRef>
+  where P: VectorProvider,
+        PathRef: AsRef<std::path::Path> {
   map_size: usize,
   max_dbs: usize,
   /// the path the DB directory
-  path: PathBuf,
+  path: PathRef,
   /// instructions for loading vectors into the db. If none is provided,
   /// no vectors will be loaded into the DB
   vector_provider: Option<P>
 }
 
-impl<P> AnnoyRecommenderBuilder<P>
-  where P: VectorProvider + Clone {
-
+impl<P, PathRef> AnnoyRecommenderBuilder<P, PathRef>
+  where P: VectorProvider,
+        PathRef: AsRef<std::path::Path> {
   pub fn build(self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError> {
     let span  = span!(Level::DEBUG, "annoy-init");
     let _guard = span.enter();
@@ -68,38 +71,20 @@ impl<P> AnnoyRecommenderBuilder<P>
     let env = EnvOpenOptions::new()
       .map_size(self.map_size.unwrap())
       .max_dbs(self.max_dbs.unwrap() as u32)
-      .open(self.path.clone().unwrap())
+      .open(self.path.unwrap())
       .map_err(|e| {
         AnnoyRecommenderBuilderError::ValidationError(
           format!("Couldn't open heed environment: {}", e)
         )
       })?;
     // let provider = self.vector_provider.unwrap();
-    let db = match self.vector_provider.clone().unwrap() {
-      Some(mut provider) => self.init_db(&env, &mut provider),
+    let db = match self.vector_provider.unwrap() {
+      Some(provider) => init_db(&env, provider),
       None => Self::open_existing_db(&env)
     }.map_err(|e| {
       format!("Couldn't open DB connection: {}", e)
     })?;
     Ok(AnnoyRecommender::new(db, env))
-  }
-
-  fn init_db(&self, env: &Env, provider: &mut P) -> Result<ArroyDatabase<DotProduct>> {
-    debug!("Initializing new heed DB");
-    let mut wrtx = env.write_txn()?;
-    let db = env.create_database(&mut wrtx, Some("listing-db"))?;
-    let writer = Writer::<DotProduct>::new(db, 0, provider.vector_dimensions() as usize);
-    let n_elements = provider.len();
-    debug!("Loading {} vectors", n_elements);
-    for (i, (id, vector)) in provider.enumerate() {
-      trace!("Inserting vector {}/{} with ID \"{}\"", i, n_elements, id);
-      writer.add_item(&mut wrtx, id, &vector)?;
-    }
-    debug!("Committing initialize transaction");
-    let mut rng = StdRng::from_entropy();
-    writer.build(&mut wrtx, &mut rng, None)?;
-    wrtx.commit()?;
-    Ok(db)
   }
 
   fn open_existing_db(env: &Env) -> Result<ArroyDatabase<DotProduct>> {
@@ -110,6 +95,26 @@ impl<P> AnnoyRecommenderBuilder<P>
     db
   }
 }
+
+fn init_db<P>(env: &Env, provider: P) -> Result<ArroyDatabase<DotProduct>>
+  where P: VectorProvider {
+  debug!("Initializing new heed DB");
+  let mut wrtx = env.write_txn()?;
+  let db = env.create_database(&mut wrtx, Some("listing-db"))?;
+  let writer = Writer::<DotProduct>::new(db, 0, provider.vector_dimensions() as usize);
+  let n_elements = provider.len();
+  debug!("Loading {} vectors", n_elements);
+  for (i, (id, vector)) in provider.enumerate() {
+    trace!("Inserting vector {}/{} with ID \"{}\"", i, n_elements, id);
+    writer.add_item(&mut wrtx, id, &vector)?;
+  }
+  debug!("Committing initialize transaction");
+  let mut rng = StdRng::from_entropy();
+  writer.build(&mut wrtx, &mut rng, None)?;
+  wrtx.commit()?;
+  Ok(db)
+}
+
 
 pub struct DatabaseInitConfig {
   pub listing_vectors: PathBuf,
