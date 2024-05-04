@@ -1,12 +1,12 @@
-mod annoy_recommender;
-mod error;
-mod list;
-mod mapping;
+pub mod annoy_recommender;
+pub mod error;
+pub mod list;
+pub mod mapping;
 #[cfg(feature = "random_recommender")]
-mod random;
+pub mod random;
 #[cfg(feature = "space")]
-mod spatial;
-mod types;
+pub mod spatial;
+pub mod types;
 
 #[macro_use]
 extern crate derive_builder;

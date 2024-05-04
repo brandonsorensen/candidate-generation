@@ -23,6 +23,8 @@ use super::{
   error::RecommendError
 };
 
+pub use arroy::distances;
+
 pub struct AnnoyRecommender<D> {
   pub db: ArroyDatabase<D>,
   pub env: Env
@@ -39,30 +41,32 @@ impl<D> AnnoyRecommender<D> {
   }
 }
 
+pub trait VectorProvider: ExactSizeIterator<Item = (u32, Vec<f32>)> {
+  fn vector_dimensions(&self) -> u16;
+}
+
 #[derive(Builder)]
 #[builder(name = "AnnoyRecommenderBuilder", public, build_fn(skip))]
 pub struct AnnoyRecommenderArguments<P>
   where P: VectorProvider {
   map_size: usize,
   max_dbs: usize,
+  /// the path the DB directory
   path: PathBuf,
+  /// instructions for loading vectors into the db. If none is provided,
+  /// no vectors will be loaded into the DB
   vector_provider: Option<P>
-}
-
-
-pub trait VectorProvider: ExactSizeIterator<Item = (u32, Vec<f32>)> {
-  fn vector_dimensions(&self) -> u16;
 }
 
 impl<P> AnnoyRecommenderBuilder<P>
   where P: VectorProvider + Clone {
 
-  fn build(self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError> {
+  pub fn build(self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError> {
     let span  = span!(Level::DEBUG, "annoy-init");
     let _guard = span.enter();
     debug!("Initializing heed environment");
     let env = EnvOpenOptions::new()
-      .map_size(self.map_size.unwrap() as usize)
+      .map_size(self.map_size.unwrap())
       .max_dbs(self.max_dbs.unwrap() as u32)
       .open(self.path.clone().unwrap())
       .map_err(|e| {
