@@ -16,6 +16,7 @@ extern crate derive_builder;
 #[cfg(feature = "random_recommender")]
 pub use random::RandomRecommender;
 pub use annoy_recommender::AnnoyRecommender;
+pub use hnsw_recommender::HnswRecommender;
 pub use list::RecommendationList;
 pub use error::RecommendError;
 pub use types::Recommendation;

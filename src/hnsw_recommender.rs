@@ -1,16 +1,14 @@
 use dashmap::DashMap;
-use hnsw_rs::{
-  dist::Distance as HnswDistance,
-  hnsw::{Hnsw, Neighbour}
-};
-use ndarray::prelude::{Array2, s};
+use hnsw_rs::hnsw::{Hnsw, Neighbour};
+use ndarray::prelude::{Array1, Array2, s};
 use tracing::{Level, span, debug, trace};
 
 use super::{
   Recommendation,
   Recommender,
   RecommendError,
-  RecommendationList
+  RecommendationList,
+  VectorProvider
 };
 
 #[cfg(feature = "space")]
@@ -22,12 +20,20 @@ use std::{
 use super::spatial::{Distance, NavigableIndex};
 
 pub use hnsw_rs::dist;
+pub use hnsw_rs::dist::Distance as HnswDistance;
 
-struct HnswRecommender<'a, D>
+pub struct HnswRecommender<'a, D>
   where D: HnswDistance<f32> + Send + Sync {
   index: Hnsw<'a, f32, D>,
   id_to_vector: DashMap<usize, usize>,
   vectors: Array2<f32>
+}
+
+impl<'a, D> HnswRecommender<'a, D>
+  where D: HnswDistance<f32> + Send + Sync {
+  fn new(index: Hnsw<'a, f32, D>, id_to_vector: DashMap<usize, usize>, vectors: Array2<f32>) -> Self {
+    Self { index, id_to_vector, vectors }
+  }
 }
 
 impl<'a, T, D> Recommender<T, usize> for HnswRecommender<'a, D>
@@ -44,6 +50,53 @@ impl<'a, T, D> Recommender<T, usize> for HnswRecommender<'a, D>
       .ok_or(RecommendError::NotFound)
       .map(|point| self.search(&point, n_items).map(Recommendation::from))
       .map(|neighbors| RecommendationList::new_with_subject(&converted, neighbors))
+  }
+}
+
+#[derive(Builder)]
+#[builder(name = "HnswRecommenderBuilder", pattern="owned", public, build_fn(skip))]
+#[allow(dead_code)]
+pub struct HnswRecommenderArguments<P, D>
+  where P: VectorProvider<usize>,
+        D: HnswDistance<f32> {
+  max_connections: usize,
+  n_elements: usize,
+  n_layers: usize,
+  ef_coef: usize,
+  metric: D,
+  vector_provider: P
+}
+
+impl<P, D> HnswRecommenderBuilder<P, D>
+  where P: VectorProvider<usize>,
+        D: HnswDistance<f32> + Send + Sync {
+  pub fn build(self) -> Result<HnswRecommender<'static, D>, HnswRecommenderBuilderError> {
+    let span  = span!(Level::DEBUG, "hnws-init");
+    let _guard = span.enter();
+    let index = Hnsw::new(
+      Self::unwrap_field(self.max_connections, "max_connections")?,
+      Self::unwrap_field(self.n_elements, "n_elements")?,
+      Self::unwrap_field(self.n_layers, "n_layers")?,
+      Self::unwrap_field(self.ef_coef, "ef_coefficient")?,
+      Self::unwrap_field(self.metric, "distance_metric")?
+    );
+    let provider = Self::unwrap_field(self.vector_provider, "vector_provider")?;
+    let shape = (provider.len(), provider.vector_dimensions() as usize);
+    let mut target_array = ndarray::Array2::<f32>::uninit(shape);
+    let mut index_mapping = dashmap::DashMap::<usize, usize>::with_capacity(provider.len());
+    for (i, keyed_vector) in provider.enumerate() {
+      index_mapping.insert(keyed_vector.key, i);
+      let as_array = Array1::from_vec(keyed_vector.vector);
+      as_array.assign_to(target_array.slice_mut(s!(i, ..)))
+    }
+    unsafe {
+      target_array.assume_init();
+    }
+    Ok(HnswRecommender::new(index, index_mapping, target_array.into_dimensionality()))
+  }
+
+  fn unwrap_field<T>(val: Option<T>, name: &'static str) -> Result<T, HnswRecommenderBuilderError> {
+    val.ok_or(HnswRecommenderBuilderError::UninitializedField(name))
   }
 }
 
