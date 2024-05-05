@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["random_recommender", "space"]
+default = []
 random_recommender = [
   "dep:rand",
   "uuid/fast-rng",
@@ -14,7 +14,8 @@ random_recommender = [
 ]
 hnsw = [
   "dep:hnsw_rs",
-  "dep:ndarray"
+  "dep:ndarray",
+  "space"
 ]
 space = []
 
