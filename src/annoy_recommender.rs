@@ -20,6 +20,7 @@ use tracing::{Level, span, debug, trace};
 use super::{
   Recommender,
   RecommendationList,
+  VectorProvider,
   error::RecommendError
 };
 
@@ -36,21 +37,17 @@ impl<D> AnnoyRecommender<D> {
   }
 
   pub fn builder<P, PathRef>() -> AnnoyRecommenderBuilder<P, PathRef>
-    where P: VectorProvider,
+    where P: VectorProvider<u32>,
           PathRef: AsRef<std::path::Path> {
     AnnoyRecommenderBuilder::default()
   }
-}
-
-pub trait VectorProvider: ExactSizeIterator<Item = (u32, Vec<f32>)> {
-  fn vector_dimensions(&self) -> u16;
 }
 
 #[derive(Builder)]
 #[builder(name = "AnnoyRecommenderBuilder", pattern="owned", public, build_fn(skip))]
 #[allow(dead_code)]
 pub struct AnnoyRecommenderArguments<P, PathRef>
-  where P: VectorProvider,
+  where P: VectorProvider<u32>,
         PathRef: AsRef<std::path::Path> {
   map_size: usize,
   max_dbs: usize,
@@ -62,7 +59,7 @@ pub struct AnnoyRecommenderArguments<P, PathRef>
 }
 
 impl<P, PathRef> AnnoyRecommenderBuilder<P, PathRef>
-  where P: VectorProvider,
+  where P: VectorProvider<u32>,
         PathRef: AsRef<std::path::Path> {
   pub fn build(self) -> Result<AnnoyRecommender<DotProduct>, AnnoyRecommenderBuilderError> {
     let span  = span!(Level::DEBUG, "annoy-init");
@@ -97,14 +94,15 @@ impl<P, PathRef> AnnoyRecommenderBuilder<P, PathRef>
 }
 
 fn init_db<P>(env: &Env, provider: P) -> Result<ArroyDatabase<DotProduct>>
-  where P: VectorProvider {
+  where P: VectorProvider<u32> {
   debug!("Initializing new heed DB");
   let mut wrtx = env.write_txn()?;
   let db = env.create_database(&mut wrtx, Some("listing-db"))?;
   let writer = Writer::<DotProduct>::new(db, 0, provider.vector_dimensions() as usize);
   let n_elements = provider.len();
   debug!("Loading {} vectors", n_elements);
-  for (i, (id, vector)) in provider.enumerate() {
+  for (i, (id, vector)) in provider.enumerate()
+    .map(|(i, key_vec)| (i, key_vec.into())) {
     trace!("Inserting vector {}/{} with ID \"{}\"", i, n_elements, id);
     writer.add_item(&mut wrtx, id, &vector)?;
   }

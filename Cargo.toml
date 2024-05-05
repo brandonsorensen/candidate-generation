@@ -12,13 +12,20 @@ random_recommender = [
   "uuid/fast-rng",
   "uuid/v4",
 ]
+hnsw = [
+  "dep:hnsw_rs",
+  "dep:ndarray"
+]
 space = []
 
 [dependencies]
 anyhow = "1.0.82"
 arroy = "0.3.0"
+dashmap = { version = "5.5.3", optional = true }
 derive_builder = "0.20.0"
 heed = "0.20.0-alpha.9"
+hnsw_rs = { version = "0.2.1", optional = true }
+ndarray = { version = "0.15.6", optional = true }
 rand = { version = "0.8.5", optional = true }
 serde = "1.0.198"
 thiserror = "1.0.58"

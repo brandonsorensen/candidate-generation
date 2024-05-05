@@ -1,5 +1,7 @@
 pub mod annoy_recommender;
 pub mod error;
+#[cfg(feature = "hnsw")]
+pub mod hnsw_recommender;
 pub mod list;
 pub mod mapping;
 #[cfg(feature = "random_recommender")]
@@ -22,6 +24,28 @@ pub trait Recommender<K, R> {
   fn recommend(&self, item_id: &K, n_items: u16)
       -> Result<RecommendationList<R>, RecommendError>;
 }
+
+pub trait VectorProvider<K>: ExactSizeIterator<Item = KeyedVector<K>> {
+  fn vector_dimensions(&self) -> u16;
+}
+
+pub struct KeyedVector<K> {
+  pub key: K,
+  pub vector: Vec<f32>
+}
+
+impl<K> KeyedVector<K> {
+  pub fn new(key: K, vector: Vec<f32>) -> Self {
+    KeyedVector { key, vector }
+  }
+}
+
+impl<K> From<KeyedVector<K>> for (K, Vec<f32>) {
+  fn from(value: KeyedVector<K>) -> Self {
+    (value.key, value.vector)
+  }
+}
+
 
 // impl<K, I> Recommender<K> for I
 //   where I: NavigableIndex<Key = K>,
