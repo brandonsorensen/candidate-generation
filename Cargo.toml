@@ -29,6 +29,7 @@ hnsw_rs = { version = "0.2.1", optional = true }
 ndarray = { version = "0.15.6", optional = true }
 rand = { version = "0.8.5", optional = true }
 serde = "1.0.198"
+tap = "1.0.1"
 thiserror = "1.0.58"
 tracing = "0.1.40"
 uuid = { version = "1.8.0", features = ["serde"] }

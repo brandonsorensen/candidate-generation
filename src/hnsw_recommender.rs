@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use hnsw_rs::hnsw::{Hnsw, Neighbour};
 use ndarray::prelude::{Array1, Array2, s};
+use tap::Tap;
 use tracing::{Level, span, debug, trace};
 
 use super::{
@@ -119,6 +120,7 @@ impl<'a, D> NavigableIndex for HnswRecommender<'a, D>
   fn search(&self, subject: &Self::Point, n_items: u16) -> Self::Neighbors {
     trace!("Searching for point in index");
     self.index.search(subject.as_slice(), n_items as usize, 1)
+      .tap(|results| trace!("Searched returned {} resuls", results.len()))
       .into_iter()
       .map(Distance::from)
   }
