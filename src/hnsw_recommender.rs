@@ -22,7 +22,6 @@ use super::spatial::{Distance, NavigableIndex};
 
 pub use hnsw_rs::dist;
 pub use hnsw_rs::dist::Distance as HnswDistance;
-use ndarray::parallel::prelude::{IntoParallelIterator, ParallelIterator};
 
 pub struct HnswRecommender<'a, D>
   where D: HnswDistance<f32> + Send + Sync {
@@ -40,6 +39,17 @@ impl<'a, D> HnswRecommender<'a, D>
   pub fn builder<P>() -> HnswRecommenderBuilder<P, D>
     where P: VectorProvider<usize>{
     HnswRecommenderBuilder::default()
+  }
+}
+
+pub(crate) struct KeyedVectorCache<K> {
+  id_to_vector: DashMap<usize, K>,
+  vectors: Array2<f32>
+}
+
+impl<K> KeyedVectorCache<K> {
+  pub fn new(id_to_vector: DashMap<usize, K>, vectors: Array2<f32>) -> Self {
+    Self { id_to_vector, vectors }
   }
 }
 
@@ -94,17 +104,27 @@ impl<P, D> HnswRecommenderBuilder<P, D>
     );
     index.set_extend_candidates(false);
     let shape = (provider.len(), provider.vector_dimensions() as usize);
-    let mut target_array = Array2::<f32>::uninit(shape);
+    let mut uninitialized = Array2::<f32>::uninit(shape);
     let index_mapping = DashMap::<usize, usize>::with_capacity(provider.len());
-    let foo = Array2::<f32>::zeros((0, 1));
+    let mut order = Vec::<usize>::with_capacity(provider.len());
     for (i, keyed_vector) in provider.enumerate() {
+      order.push(keyed_vector.key);
+      index_mapping.insert(keyed_vector.key, i);
       let as_array = Array1::from_vec(keyed_vector.vector);
-      as_array.move_into_uninit(&mut target_array.slice_mut(s!(i, ..)));
+      as_array.move_into_uninit(&mut uninitialized.slice_mut(s!(i, ..)));
     }
     unsafe {
-      let out = target_array.assume_init();
+      let out = uninitialized.assume_init();
+      let slices = out.rows()
+        .into_iter()
+        .map(|v|  v.as_slice())
+        .zip(order.into_iter())
+        .map(|(vec, key)| vec.map(|v| (v, key)) )
+        .collect::<Option<Vec<(&[f32], usize)>>>()
+        .ok_or(HnswRecommenderBuilderError::ValidationError("Couldn't read vector provider".to_string()))?;
       // insert into index
       index.set_searching_mode(true);
+      index.parallel_insert_slice(&slices);
       Ok(HnswRecommender::new(index, index_mapping, out))
     }
   }
