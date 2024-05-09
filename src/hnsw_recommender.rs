@@ -95,36 +95,43 @@ impl<P, D> HnswRecommenderBuilder<P, D>
     let span  = span!(Level::DEBUG, "hnsw-init");
     let _guard = span.enter();
     let provider = Self::unwrap_field(self.vector_provider, "vector_provider")?;
-    let mut index = Hnsw::new(
-      Self::unwrap_field(self.max_connections, "max_connections")?,
-      provider.len(),
-      Self::unwrap_field(self.n_layers, "n_layers")?,
-      Self::unwrap_field(self.ef_coef, "ef_coefficient")?,
-      Self::unwrap_field(self.metric, "distance_metric")?
-    );
-    index.set_extend_candidates(false);
     let shape = (provider.len(), provider.vector_dimensions() as usize);
     let mut uninitialized = Array2::<f32>::uninit(shape);
     let index_mapping = DashMap::<usize, usize>::with_capacity(provider.len());
     let mut order = Vec::<usize>::with_capacity(provider.len());
+    debug!("Pre-init: Consuming vector provider");
     for (i, keyed_vector) in provider.enumerate() {
       order.push(keyed_vector.key);
       index_mapping.insert(keyed_vector.key, i);
       let as_array = Array1::from_vec(keyed_vector.vector);
       as_array.move_into_uninit(&mut uninitialized.slice_mut(s!(i, ..)));
     }
+    debug!("Initializing index");
+    let mut index = Hnsw::new(
+      Self::unwrap_field(self.max_connections, "max_connections")?,
+      shape.0,
+      Self::unwrap_field(self.n_layers, "n_layers")?,
+      Self::unwrap_field(self.ef_coef, "ef_coefficient")?,
+      Self::unwrap_field(self.metric, "distance_metric")?
+    );
+    index.set_extend_candidates(false);
     unsafe {
+      use ndarray::parallel::prelude::*;
+      use ndarray::Axis;
+      debug!("Initialized 2D array");
       let out = uninitialized.assume_init();
-      let slices = out.rows()
-        .into_iter()
-        .map(|v|  v.as_slice())
-        .zip(order.into_iter())
-        .map(|(vec, key)| vec.map(|v| (v, key)) )
-        .collect::<Option<Vec<(&[f32], usize)>>>()
-        .ok_or(HnswRecommenderBuilderError::ValidationError("Couldn't read vector provider".to_string()))?;
+      out.axis_iter(Axis(0))
+        .into_par_iter()
+        .zip(order.into_par_iter())
+        .inspect(|(_, key)| trace!("Inserting key \"{}\" into the index", key))
+        .try_for_each(|(row, key)| {
+          row.as_slice()
+            .map(|unwrapped| index.insert_slice((unwrapped, key)))
+            .ok_or_else(|| HnswRecommenderBuilderError::ValidationError("coudn't init index".to_string()))
+        })?;
+      debug!("Index initialized");
       // insert into index
       index.set_searching_mode(true);
-      index.parallel_insert_slice(&slices);
       Ok(HnswRecommender::new(index, index_mapping, out))
     }
   }

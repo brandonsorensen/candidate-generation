@@ -26,7 +26,7 @@ dashmap = { version = "5.5.3", optional = true }
 derive_builder = "0.20.0"
 heed = "0.20.0-alpha.9"
 hnsw_rs = { version = "0.2.1", optional = true }
-ndarray = { version = "0.15.6", optional = true }
+ndarray = { version = "0.15.6", optional = true, features = ["rayon"] }
 rand = { version = "0.8.5", optional = true }
 serde = "1.0.198"
 tap = "1.0.1"
