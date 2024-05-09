@@ -1,3 +1,4 @@
+#[cfg(feature = "annoy")]
 pub mod annoy_recommender;
 pub mod error;
 #[cfg(feature = "hnsw")]
@@ -10,12 +11,15 @@ pub mod random;
 pub mod spatial;
 pub mod types;
 
+#[cfg(any(feature = "annoy", feature = "hnsw"))]
 #[macro_use]
 extern crate derive_builder;
 
 #[cfg(feature = "random_recommender")]
 pub use random::RandomRecommender;
+#[cfg(feature = "annoy")]
 pub use annoy_recommender::AnnoyRecommender;
+#[cfg(feature = "hnsw")]
 pub use hnsw_recommender::HnswRecommender;
 pub use list::RecommendationList;
 pub use error::RecommendError;

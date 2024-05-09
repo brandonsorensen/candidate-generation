@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 use arroy::{
   Database as ArroyDatabase,
   Reader,
@@ -15,6 +14,7 @@ use rand::{
   SeedableRng,
   rngs::StdRng
 };
+use thiserror::Error;
 use tracing::{Level, span, debug, trace};
 
 use super::{
@@ -71,7 +71,7 @@ impl<P, PathRef> AnnoyRecommenderBuilder<P, PathRef>
       .open(self.path.unwrap())
       .map_err(|e| {
         AnnoyRecommenderBuilderError::ValidationError(
-          format!("Couldn't open heed environment: {}", e)
+          format!("Couldn't open heed environment: {:?}", e)
         )
       })?;
     // let provider = self.vector_provider.unwrap();
@@ -79,21 +79,23 @@ impl<P, PathRef> AnnoyRecommenderBuilder<P, PathRef>
       Some(provider) => init_db(&env, provider),
       None => Self::open_existing_db(&env)
     }.map_err(|e| {
-      format!("Couldn't open DB connection: {}", e)
+      AnnoyRecommenderBuilderError::ValidationError(
+        format!("Couldn't open DB connection: {:?}", e)
+      )
     })?;
     Ok(AnnoyRecommender::new(db, env))
   }
 
-  fn open_existing_db(env: &Env) -> Result<ArroyDatabase<DotProduct>> {
+  fn open_existing_db(env: &Env) -> Result<ArroyDatabase<DotProduct>, InitError> {
     let rtx = env.read_txn()?;
     let db = env.open_database(&rtx, Some("listing-db"))?
-      .ok_or_else(|| anyhow::anyhow!("Couldn't open existing heed DB"));
+      .ok_or(InitError::NoDB);
     let _ = rtx.commit();
     db
   }
 }
 
-fn init_db<P>(env: &Env, provider: P) -> Result<ArroyDatabase<DotProduct>>
+fn init_db<P>(env: &Env, provider: P) -> Result<ArroyDatabase<DotProduct>, InitError>
   where P: VectorProvider<u32> {
   debug!("Initializing new heed DB");
   let mut wrtx = env.write_txn()?;
@@ -113,6 +115,18 @@ fn init_db<P>(env: &Env, provider: P) -> Result<ArroyDatabase<DotProduct>>
   Ok(db)
 }
 
+#[derive(Debug, Error)]
+pub enum InitError {
+  Arroy(#[from] arroy::Error),
+  Heed(#[from] heed::Error),
+  NoDB
+}
+
+impl std::fmt::Display for InitError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Couldn't open DB due to error: {:?}", self)
+  }
+}
 
 pub struct DatabaseInitConfig {
   pub listing_vectors: PathBuf,
