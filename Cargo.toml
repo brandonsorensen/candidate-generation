@@ -33,7 +33,7 @@ heed = { version = "0.20.0-alpha.9", optional = true }
 hnsw_rs = { version = "0.2.1", optional = true }
 ndarray = { version = "0.15.6", optional = true, features = ["rayon"] }
 rand = { version = "0.8.5", optional = true }
-serde = "1.0.198"
+serde = { version = "1.0.198", features = ["derive"] }
 tap = "1.0.1"
 thiserror = "1.0.58"
 tracing = "0.1.40"
