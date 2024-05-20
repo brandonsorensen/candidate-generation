@@ -1,2 +1,2 @@
 # candidate-generation
-A framework for implementation candidate generation/retrieval algorithms for recommender systems.
+A framework for implementation of candidate generation/retrieval algorithms for recommender systems.
